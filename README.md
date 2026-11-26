@@ -91,6 +91,88 @@ for ptzd, `/tmp/log/ptzd/current`. IPv4 only, no SFTP or forwarding: copy files 
 > ptzd's ONVIF port 8899 is plain HTTP on every interface. Keep the camera on a
 > trusted network.
 
+## Frigate settings
+
+These settings gave the best balance of tracking latency and load on Frigate 0.18.3
+with an Intel Core i5-9500 and its UHD Graphics 630 iGPU: Quick Sync decoding and
+an OpenVINO YOLOv9-s 320 detector on the iGPU. Other hardware may need other values.
+
+```yaml
+go2rtc:
+  streams:
+    trackmix:      # wide lens, HEVC 3840x2160, record only
+      - rtsp://{FRIGATE_REOLINK_USER}:{FRIGATE_REOLINK_PASSWORD}@CAMERA:554/Preview_01_main
+    trackmix_sub:  # wide lens, H.264 896x512 at 20 fps, detect
+      - ffmpeg:https://CAMERA/flv?port=1935&app=bcs&stream=channel0_sub.bcs&user={FRIGATE_REOLINK_USER}&password={FRIGATE_REOLINK_PASSWORD}
+
+cameras:
+  trackmix:
+    ffmpeg:
+      hwaccel_args: preset-intel-qsv-h264
+      inputs:
+        - path: rtsp://127.0.0.1:8554/trackmix
+          input_args: preset-rtsp-restream
+          roles: [record]
+        - path: rtsp://127.0.0.1:8554/trackmix_sub
+          # preset-rtsp-restream plus two decoder options; this -bsf:v
+          # replaces the one from the hwaccel preset.
+          input_args:
+            - -user_agent
+            - FFmpeg Frigate/0.18.3
+            - -rtsp_transport
+            - tcp
+            - -timeout
+            - "10000000"
+            - -async_depth
+            - "1"
+            - -bsf:v
+            - dump_extra,h264_metadata=level=20
+          roles: [detect]
+    detect:
+      width: 896
+      height: 512
+      fps: 10
+    onvif:
+      host: CAMERA
+      port: 8899
+      user: '{FRIGATE_REOLINK_USER}'
+      password: '{FRIGATE_REOLINK_PASSWORD}'
+      tls_insecure: true   # makes Frigate send PasswordText, which ptzd needs
+      profile: wide
+      autotracking:
+        enabled: true
+        calibrate_on_startup: false
+        zooming: disabled
+        track: [person, car]
+        return_preset: home  # a preset saved on the camera
+        timeout: 10
+```
+
+On the camera, in `/mnt/para/ptzd/ptzd.conf`, then `sv restart /mnt/tmp/sv/ptzd`:
+
+```
+settle_secs = 1.3
+```
+
+| Setting | Why |
+|---|---|
+| Detect on the sub stream over HTTP-FLV | Frigate's recommended Reolink source; same latency as RTSP on this camera |
+| `-async_depth 1`, `h264_metadata=level=20` | The sub stream does not signal its reorder depth, so Quick Sync assumes level 5.1 and holds about 0.9 s of frames. Level 2.0 limits that to one frame; the stream has no B-frames |
+| `preset-intel-qsv-h264` | VAAPI fails on this stream (`Failed to sync surface`) |
+| `fps: 10` | Frigate's frame-rate conversion holds frames. 10 fps delivers them about 0.3 s sooner than 5 fps, for about 10 points more iGPU load under motion |
+| `settle_secs = 1.3` | ptzd reports the head as moving until Frigate's detect frames stop showing the move. Shorter, and Frigate reads moving frames as still ones and overshoots back and forth |
+| `zooming: disabled` | Zoom moves only the tele lens, so the tracked image never changes size |
+
+Calibrate once before raising `settle_secs`: start Frigate with
+`calibrate_on_startup: true`, which writes `movement_weights` into the config, then
+set it back to `false`. Calibration times moves by ptzd's moving state, which
+`settle_secs` extends.
+
+With these settings a move shows up in Frigate's detect frames about 0.6 to 0.7 s
+after the command; about 0.35 s of that is the camera's own image pipeline. With a
+different detect pipeline, `settle_secs` must still exceed the time from the motors
+stopping to the last moving frame reaching Frigate.
+
 ## Documentation
 
 - [firmware/README.md](firmware/README.md): build, verify, flash, recover
