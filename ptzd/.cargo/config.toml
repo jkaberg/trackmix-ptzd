@@ -1,0 +1,5 @@
+# Static armv7 musl build. rust-lld ships with rustup and the target is
+# self-contained, so no cross gcc is needed.
+[target.armv7-unknown-linux-musleabihf]
+linker = "rust-lld"
+rustflags = ["-C", "target-cpu=cortex-a9", "-C", "target-feature=+crt-static"]

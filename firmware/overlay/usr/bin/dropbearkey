@@ -1,0 +1,5 @@
+#!/bin/sh
+# Alpine (musl) binary. The stock profile puts the glibc libz first in
+# LD_LIBRARY_PATH, which musl would load and crash on.
+unset LD_LIBRARY_PATH LD_PRELOAD
+exec /usr/lib/custom-ssh/dropbearkey "$@"

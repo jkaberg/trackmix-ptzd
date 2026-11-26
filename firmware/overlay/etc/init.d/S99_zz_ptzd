@@ -1,0 +1,47 @@
+#!/bin/sh
+# Start ptzd under runsv unless /mnt/para/ptzd/disabled exists. Sorts after
+# S99_Sysctl. Runs in the background and never holds up rcS.
+(
+    PATH=/sbin:/usr/sbin:/bin:/usr/bin
+    mkdir /var/run/custom-ptzd.lock 2>/dev/null || exit 0
+    para=/mnt/para/ptzd
+    i=0
+    while [ $i -lt 60 ] && ! grep -q ' /mnt/para ubifs rw' /proc/mounts; do
+        sleep 1
+        i=$((i + 1))
+    done
+    if [ -e $para/disabled ]; then
+        echo "ptzd: off ('rm $para/disabled' and reboot to start it)"
+        exit 0
+    fi
+    mkdir -p $para || exit 1
+    # Failsafe: this marker survives only if the last boot died within 5 min
+    # of starting ptzd (a reboot loop, or just a power cut). Skip this one boot
+    # and clear it, so the next boot starts ptzd again.
+    if [ -e $para/starting ]; then
+        rm -f $para/starting
+        sync
+        echo "ptzd: last boot died within 5 min of start, skipping this boot only"
+        exit 0
+    fi
+    i=0
+    while [ $i -lt 120 ] && [ ! -c /dev/lens_zfi ]; do
+        sleep 1
+        i=$((i + 1))
+    done
+    if [ ! -c /dev/lens_zfi ]; then
+        echo "ptzd: no /dev/lens_zfi"
+        exit 1
+    fi
+    sv=/mnt/tmp/sv/ptzd
+    mkdir -p $sv/log || exit 1
+    cp /etc/ptzd/run /etc/ptzd/finish $sv/ && cp /etc/ptzd/log.run $sv/log/run || exit 1
+    chmod 755 $sv/run $sv/finish $sv/log/run
+    : > $para/starting || exit 1
+    sync
+    runsv $sv &
+    sleep 300
+    rm -f $para/starting
+    sync
+) </dev/null >>/mnt/tmp/custom-ptzd.log 2>&1 &
+exit 0

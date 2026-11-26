@@ -1,0 +1,26 @@
+[workspace]
+members = ["crates/core", "crates/hw", "crates/onvif", "crates/motion", "crates/reolink"]
+resolver = "2"
+
+[package]
+name = "ptzd"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+ptzd-core = { path = "crates/core" }
+ptzd-hw = { path = "crates/hw" }
+ptzd-onvif = { path = "crates/onvif" }
+ptzd-motion = { path = "crates/motion" }
+ptzd-reolink = { path = "crates/reolink" }
+log = "0.4"
+# sigwait thread (nix is on the README.md dependency list)
+nix = { version = "0.29", default-features = false, features = ["signal", "user"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

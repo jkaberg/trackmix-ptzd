@@ -1,0 +1,10 @@
+[package]
+name = "ptzd-onvif"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+ptzd-core = { path = "../core" }
+quick-xml = "0.42"
+log = "0.4"

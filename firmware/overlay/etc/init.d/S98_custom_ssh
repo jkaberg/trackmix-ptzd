@@ -1,0 +1,82 @@
+#!/bin/sh
+# Root SSH (dropbear 2026.94 from Alpine). Sorts before S99_Sysctl so it still
+# comes up when start_app hangs. Everything runs in the background: a failure
+# here must never hold up rcS.
+(
+    umask 077
+    mkdir /var/run/custom-ssh.lock 2>/dev/null || exit 0
+    PATH=/sbin:/usr/sbin:/bin:/usr/bin
+    # Retry: a passing failure (memory, I/O) must not cost the host key.
+    valid() {
+        [ -f "$1" ] && [ ! -L "$1" ] || return 1
+        for _ in 1 2 3; do
+            dropbearkey -y -f "$1" >/dev/null 2>&1 && return 0
+            sleep 1
+        done
+        return 1
+    }
+    run=/var/run/custom-ssh
+    store=/mnt/para/ssh
+
+    # start_app mounts /mnt/para. Never write into the unmounted directory.
+    i=0
+    while [ $i -lt 60 ] && ! grep -q ' /mnt/para ubifs rw' /proc/mounts; do
+        sleep 1
+        i=$((i + 1))
+    done
+    if grep -q ' /mnt/para ubifs rw' /proc/mounts; then
+        dir=$store
+    else
+        echo "custom-ssh: /mnt/para not mounted, no login possible"
+        dir=$run
+    fi
+
+    key=
+    for d in "$dir" $run; do
+        mkdir -p "$d" && chown 0:0 "$d" && chmod 700 "$d" || continue
+        k=$d/host_ed25519
+        if ! valid "$k"; then
+            [ ! -e "$k" ] && [ ! -L "$k" ] || mv -f "$k" "$k.bad"
+            rm -f "$k.new"
+            dropbearkey -t ed25519 -f "$k.new" && sync && mv "$k.new" "$k" && sync
+            rm -f "$k.new.pub"
+        fi
+        if valid "$k"; then
+            key=$k
+            break
+        fi
+    done
+    [ -n "$key" ] || exit 1
+    # dropbear re-reads the key for every connection. Use a tmpfs copy, so SSH
+    # survives a factory reset wiping /mnt/para under it.
+    if [ "$key" != $run/host_ed25519 ]; then
+        mkdir -p $run && chmod 700 $run && cp "$key" $run/host_ed25519 && key=$run/host_ed25519
+    fi
+
+    # First boot: default password. /etc/shadow links here.
+    if [ "$dir" = $store ] && [ ! -e $store/shadow ]; then
+        cp /etc/custom-ssh/shadow.default $store/shadow.new && chmod 600 $store/shadow.new && sync &&
+            mv $store/shadow.new $store/shadow && sync
+    fi
+    # dropbear reads shadow only if the passwd field is x. Bind a copy over the
+    # stock file instead of changing it.
+    mkdir -p $run
+    sed 's/^root:[^:]*:/root:x:/' /etc/passwd >$run/passwd && chmod 644 $run/passwd &&
+        mount --bind $run/passwd /etc/passwd
+
+    # Cap the log: it is on tmpfs and opened for append.
+    while sleep 600; do
+        [ "$(wc -c </mnt/tmp/custom-ssh.log)" -gt 262144 ] && : >/mnt/tmp/custom-ssh.log
+    done &
+
+    # -E: log to stderr. -s: no passwords. -j/-k: no forwarding. 0.0.0.0: IPv4 only.
+    while :; do
+        s=
+        if [ -e $store/no-password ] || ! grep -q '^root:x:' /etc/passwd; then
+            s=-s
+        fi
+        dropbear -F -E $s -j -k -p 0.0.0.0:22 -r "$key" -P /var/run/custom-ssh.pid
+        sleep 5
+    done
+) </dev/null >>/mnt/tmp/custom-ssh.log 2>&1 &
+exit 0

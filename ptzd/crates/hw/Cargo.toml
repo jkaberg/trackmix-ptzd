@@ -1,0 +1,11 @@
+[package]
+name = "ptzd-hw"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+ptzd-core = { path = "../core" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { version = "0.29", default-features = false, features = ["ioctl"] }

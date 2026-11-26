@@ -1,0 +1,17 @@
+#!/bin/sh
+# Runs after ptzd exits or crashes; runsv passes the exit code as $1.
+# Exit 0 is a clean stop: the daemon already stopped its own motion, and a
+# STOP now would cut off a move of the Reolink app (review 2 R2).
+# Otherwise STOP both axes (closing the fd does not stop the motors,
+# lens_zfi_release is a no-op, plan §7a) and leave a marker so ./run backs off.
+# With no daemon running, `ptzd ctl stop` opens /dev/lens_zfi itself.
+if [ "$1" = 0 ]; then
+    rm -f "${PTZD_FAIL_MARK:-/tmp/ptzd.failed}"
+    exit 0
+fi
+: > "${PTZD_FAIL_MARK:-/tmp/ptzd.failed}"
+conf=/mnt/para/ptzd/ptzd.conf
+[ -f "$conf" ] || conf=/etc/ptzd/ptzd.conf
+"${PTZD_BIN:-/usr/sbin/ptzd}" ctl --config "${PTZD_CONF:-$conf}" stop \
+    >"${PTZD_FAIL_MARK:-/tmp/ptzd.failed}.log" 2>&1
+exit 0

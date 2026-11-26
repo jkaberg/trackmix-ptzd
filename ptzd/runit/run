@@ -1,0 +1,14 @@
+#!/bin/sh
+# runsv service for ptzd (plan §7a), installed as /etc/ptzd/run and copied to
+# /mnt/tmp/sv/ptzd by the S99_zz_ptzd boot hook. Logs go to log/run.
+exec 2>&1
+# Backoff (W1): the last exit was a failure (marker left by ./finish), so
+# wait before retrying instead of hammering a head that `device` is homing.
+FAIL_MARK=${PTZD_FAIL_MARK:-/tmp/ptzd.failed}
+if [ -f "$FAIL_MARK" ]; then
+    rm -f "$FAIL_MARK"
+    sleep "${PTZD_BACKOFF:-30}"
+fi
+conf=/mnt/para/ptzd/ptzd.conf
+[ -f "$conf" ] || conf=/etc/ptzd/ptzd.conf
+exec "${PTZD_BIN:-/usr/sbin/ptzd}" run --config "${PTZD_CONF:-$conf}"

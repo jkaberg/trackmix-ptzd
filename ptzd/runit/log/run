@@ -1,0 +1,6 @@
+#!/bin/sh
+# svlogd on tmpfs; never log to /mnt/para (flash wear, plan §7a). /tmp is 5 MB
+# and svlogd defaults to 10 x 1 MB, so cap it at about 0.5 MB.
+mkdir -p /tmp/log/ptzd
+printf 's65536\nn6\n' > /tmp/log/ptzd/config
+exec svlogd -tt /tmp/log/ptzd

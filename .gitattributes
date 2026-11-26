@@ -1,0 +1,7 @@
+* text=auto eol=lf
+# Pinned by hash: never convert line endings
+*.paks binary
+*.apk binary
+*.pub -text
+firmware/stock/** -text
+firmware/overlay/** text eol=lf

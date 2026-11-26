@@ -1,0 +1,35 @@
+#!/bin/sh
+# Change the root SSH password or turn password login off and on.
+PATH=/sbin:/usr/sbin:/bin:/usr/bin
+store=/mnt/para/ssh
+umask 077
+die() { echo "sshctl: $*" >&2; exit 1; }
+restart() { kill "$(cat /var/run/custom-ssh.pid)"; echo "SSH restarts in a few seconds, this session stays open."; }
+ask() { printf '%s' "$1"; stty -echo 2>/dev/null; IFS= read -r REPLY; stty echo 2>/dev/null; echo; }
+[ -d $store ] || die "$store is not available"
+
+case ${1:-} in
+passwd)
+    ask 'New root SSH password: '; a=$REPLY
+    ask 'Again: '; b=$REPLY
+    [ "$a" = "$b" ] || die "passwords differ"
+    [ ${#a} -ge 8 ] && [ ${#a} -le 100 ] || die "use 8 to 100 characters"
+    h=$(printf '%s\n' "$a" | cryptpw -m sha512 -P 0) || die "hashing failed"
+    case $h in '$6$'*) ;; *) die "unexpected hash" ;; esac
+    # Synced before the rename, so a power cut leaves the old or the new file.
+    echo "root:$h:20000:0:99999:7:::" >$store/shadow.new && sync && mv -f $store/shadow.new $store/shadow && sync ||
+        die "could not store it, nothing changed"
+    echo "Password changed."
+    ;;
+password-off)
+    grep -qE '^(ssh-|ecdsa-|sk-)' $store/authorized_keys 2>/dev/null ||
+        die "add a key to /root/.ssh/authorized_keys first, or you lock yourself out"
+    touch $store/no-password && sync || die "could not store it"
+    restart
+    ;;
+password-on)
+    rm -f $store/no-password && sync || die "could not store it"
+    restart
+    ;;
+*) echo "usage: sshctl passwd | password-off | password-on"; exit 2 ;;
+esac

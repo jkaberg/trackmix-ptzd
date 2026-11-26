@@ -1,0 +1,35 @@
+# Reolink's firmware: downloaded by the user (firmware/stock/README.md), and every
+# built image, which contains it.
+/firmware/stock/upgrade/
+/firmware/build/
+*.pak
+*.paks
+
+# Rust
+target/
+*.rs.bk
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Secrets. Nothing private belongs in this repo or in the image.
+id_*
+*.pem
+*.key
+.env
+.env.*
+authorized_keys
+host_ed25519*
+
+# Editors, OS, logs
+.vscode/
+.idea/
+.claude/settings.local.json
+*.swp
+*~
+.DS_Store
+Thumbs.db
+*.log
